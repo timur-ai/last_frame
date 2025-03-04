@@ -1,56 +1,64 @@
-# Extracting the last frame from MP4 video files
-# This script processes all MP4 files in the current directory and saves the last frame as PNG
-
-# Output settings
-$OutputEncoding = [System.Text.Encoding]::UTF8
+# Extract last frame from MP4 videos to PNG files
 $ErrorActionPreference = "Stop"
+$OutputEncoding = [System.Text.Encoding]::UTF8
 
-# FFmpeg check
+# Verify FFmpeg is installed
 if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) {
     Write-Error "FFmpeg is not installed" -ForegroundColor Red
     exit 1
 }
 
-# Temporary directory
+# Create temp directory
 $tempDir = Join-Path $env:TEMP "ffmpeg_extract"
 New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
 
+# Function to extract last frame using specified method
+function Extract-LastFrame {
+    param (
+        [string]$InputFile,
+        [string]$OutputFile,
+        [string]$Method = "reverse"
+    )
+    
+    $command = if ($Method -eq "reverse") {
+        "ffmpeg -v quiet -i `"$InputFile`" -vf `"reverse`" -frames:v 1 -update 1 `"$OutputFile`" -y"
+    } else {
+        "ffmpeg -v quiet -sseof -0.001 -i `"$InputFile`" -frames:v 1 -update 1 `"$OutputFile`" -y"
+    }
+    
+    Invoke-Expression $command
+    return Test-Path $OutputFile
+}
+
 try {
-    # Processing all MP4 files in the current directory
+    # Process each MP4 file
     Get-ChildItem -Filter "*.mp4" | ForEach-Object {
         $outputFile = [System.IO.Path]::ChangeExtension($_.FullName, "png")
         
-        # Skip if PNG already exists
+        # Skip existing PNG files
         if (Test-Path $outputFile) {
             Write-Host "Skipping: $($_.Name) - PNG already exists" -ForegroundColor Yellow
             return
         }
         
         Write-Host "Processing: $($_.Name)"
-        
-        # Create temporary file and extract the last frame
         $tempFile = Join-Path $tempDir "$($_.BaseName).png"
         
-        # Method 1: use reverse filter to get the last frame
-        ffmpeg -v quiet -i "$($_.FullName)" -vf "reverse" -frames:v 1 -update 1 "$tempFile" -y
+        # Try primary method (reverse filter)
+        $success = Extract-LastFrame -InputFile $_.FullName -OutputFile $tempFile -Method "reverse"
         
-        # Move result if successful
-        if (Test-Path $tempFile) {
+        # If failed, try alternative method
+        if (-not $success) {
+            Write-Host "Trying alternative method..." -ForegroundColor Yellow
+            $success = Extract-LastFrame -InputFile $_.FullName -OutputFile $tempFile -Method "seek"
+        }
+        
+        # Handle results
+        if ($success) {
             Move-Item -Path $tempFile -Destination $outputFile -Force
             Write-Host "Created: $($_.BaseName).png" -ForegroundColor Green
         } else {
-            # Fallback method if the first one failed
-            Write-Host "Attempting extraction using alternative method..." -ForegroundColor Yellow
-            
-            # Method 2: use -sseof with minimal offset
-            ffmpeg -v quiet -sseof -0.001 -i "$($_.FullName)" -frames:v 1 -update 1 "$tempFile" -y
-            
-            if (Test-Path $tempFile) {
-                Move-Item -Path $tempFile -Destination $outputFile -Force
-                Write-Host "Created: $($_.BaseName).png" -ForegroundColor Green
-            } else {
-                Write-Host "Processing error: $($_.Name)" -ForegroundColor Red
-            }
+            Write-Host "Processing error: $($_.Name)" -ForegroundColor Red
         }
     }
 } finally {
