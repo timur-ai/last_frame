@@ -1,0 +1,26 @@
+# Ignore video files
+*.mp4
+*.avi
+*.mkv
+*.mov
+*.wmv
+*.flv
+*.webm
+
+# Ignore images
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.bmp
+*.tiff
+*.webp
+
+# Temporary files
+*.tmp
+temp/
+*/temp/
+
+# System-specific files
+.DS_Store
+Thumbs.db 
